@@ -1,0 +1,46 @@
+cluster_name: knotsrepus
+
+max_workers: 128
+
+docker:
+  image: "rayproject/ray:1.4.0-py38"
+  container_name: "ray_container"
+  run_options:
+    - "--shm-size=2gb"
+
+provider:
+  type: aws
+  region: eu-west-2
+
+available_node_types:
+  node.default:
+    resources: {"CPU": 2, "pushshift-ratelimit": 120}
+    node_config:
+      InstanceType: t3.medium
+      ImageId: ami-0194c3e07668a7e36 # Ubuntu Server 20.04 LTS (HVM), SSD Volume Type
+
+head_node_type: node.default
+
+file_mounts:
+  "~/app": "/app"
+
+rsync_exclude:
+  - "**/.git"
+  - "**/.git/**"
+  - "out/*"
+  - "venv/*"
+
+rsync_filter:
+  - ".gitignore"
+
+auth:
+  ssh_user: ubuntu
+
+initialization_commands:
+  - curl -fsSL https://get.docker.com -o get-docker.sh
+  - sudo sh get-docker.sh
+  - sudo usermod -aG docker $USER
+  - sudo systemctl restart docker -f
+
+setup_commands:
+  - pip install -r ~/app/requirements.txt
