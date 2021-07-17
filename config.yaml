@@ -1,6 +1,8 @@
 cluster_name: knotsrepus
 
-max_workers: 128
+max_workers: 1024
+upscaling_speed: 2.0
+idle_timeout_minutes: 10
 
 docker:
   image: "rayproject/ray:1.4.0-py38"
@@ -11,6 +13,7 @@ docker:
 provider:
   type: aws
   region: eu-west-2
+  cache_stopped_nodes: false
 
 available_node_types:
   node.default:
