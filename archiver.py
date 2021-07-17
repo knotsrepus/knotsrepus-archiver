@@ -134,6 +134,9 @@ class RetrieveSubmissionsStep:
         submission_count = 0
 
         while True:
+            self.logger.info("Requesting submissions after %s...",
+                             datetime.datetime.fromtimestamp(max_created_utc).isoformat())
+
             chunk = await pushshift.request(
                 "search/submission",
                 subreddit="superstonk",
@@ -144,6 +147,9 @@ class RetrieveSubmissionsStep:
             if len(chunk) == 0:
                 self.logger.info(f"{submission_count} submissions retrieved.")
                 break
+
+            last = chunk[-1]
+            max_created_utc = last["created_utc"]
 
             chunk = list(filter(
                 lambda submission: "link_flair_text" in submission and self.FLAIR_DD in submission["link_flair_text"],
@@ -156,11 +162,12 @@ class RetrieveSubmissionsStep:
 
             submission_count += len(chunk)
 
-            last = chunk[-1]
-            max_created_utc = last["created_utc"]
-
             for queue in self.submission_queues:
                 queue.put_nowait_batch(chunk)
+
+        # Signal to all queue consumers that no more submissions are to be processed.
+        for queue in self.submission_queues:
+            await queue.put_async(ray_utils.QueueSignal.END_OF_QUEUE)
 
 
 @ray.remote
@@ -308,7 +315,10 @@ class ArchiveMediaStep:
             if image["status"] != "valid":
                 continue
 
-            source_image = image["s"]
+            source_image = image.get("s", None)
+            if source_image is None:
+                continue
+
             image_url = source_image.get("u", source_image.get("gif", None))
 
             if image_url is None:
