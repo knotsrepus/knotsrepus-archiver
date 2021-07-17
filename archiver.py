@@ -6,15 +6,16 @@ import aiohttp
 import ray
 import ray.util.queue
 
+import http_utils
 import performance
 import pushshift
 import ray_utils
-import utils
+import log_utils
 
 
 class ArchiverJob:
     def __init__(self, filesystem, comments_workers=2, media_workers=2, after_utc=None, before_utc=None):
-        self.logger = utils.get_logger(type(self).__name__)
+        self.logger = log_utils.get_logger(type(self).__name__)
         self.report = self.setup_report(after_utc, before_utc)
 
         self.filesystem = filesystem
@@ -110,15 +111,17 @@ class ArchiverJob:
             submission_id, report = result
 
             submission_report = self.report["submissions"].setdefault(submission_id, dict())
-            submission_report[processor_type] = result
+            submission_report[processor_type] = report
 
         return post_process
 
 
 @ray.remote(resources={"pushshift-ratelimit": 60})
 class RetrieveSubmissionsStep:
+    FLAIR_DD = "DD 👨‍🔬"
+
     def __init__(self, submission_queues, after_utc=None, before_utc=None):
-        self.logger = utils.get_logger(type(self).__name__)
+        self.logger = log_utils.get_logger(type(self).__name__)
 
         self.submission_queues = submission_queues
         self.after_utc = after_utc
@@ -138,12 +141,18 @@ class RetrieveSubmissionsStep:
                 before=self.before_utc
             )
 
-            if chunk is None:
-                raise Exception("Could not retrieve submissions.")
-
             if len(chunk) == 0:
                 self.logger.info(f"{submission_count} submissions retrieved.")
                 break
+
+            chunk = list(filter(
+                lambda submission: "link_flair_text" in submission and self.FLAIR_DD in submission["link_flair_text"],
+                chunk
+            ))
+
+            if len(chunk) == 0:
+                # Found no DD to archive, continue to the next chunk.
+                continue
 
             submission_count += len(chunk)
 
@@ -157,7 +166,7 @@ class RetrieveSubmissionsStep:
 @ray.remote
 class ArchiveSubmissionStep:
     def __init__(self, filesystem):
-        self.logger = utils.get_logger(type(self).__name__)
+        self.logger = log_utils.get_logger(type(self).__name__)
 
         self.filesystem = filesystem
 
@@ -179,7 +188,7 @@ class ArchiveSubmissionStep:
 @ray.remote(resources={"pushshift-ratelimit": 60}, max_retries=2)
 class ArchiveCommentsStep:
     def __init__(self, filesystem):
-        self.logger = utils.get_logger(type(self).__name__)
+        self.logger = log_utils.get_logger(type(self).__name__)
 
         self.filesystem = filesystem
 
@@ -218,9 +227,6 @@ class ArchiveCommentsStep:
             ids = ",".join(id_chunk)
             chunk = await pushshift.request("search/comment", ids=ids)
 
-            if chunk is None:
-                raise Exception(f"Could not retrieve data for comments {id_chunk}")
-
             comments.extend(chunk)
 
         return comments
@@ -229,7 +235,7 @@ class ArchiveCommentsStep:
 @ray.remote(max_retries=2)
 class ArchiveMediaStep:
     def __init__(self, filesystem):
-        self.logger = utils.get_logger(type(self).__name__)
+        self.logger = log_utils.get_logger(type(self).__name__)
         self.session = aiohttp.ClientSession()
 
         self.filesystem = filesystem
@@ -254,11 +260,12 @@ class ArchiveMediaStep:
     def get(self, url, **kwargs):
         return self.session.get(url, **kwargs)
 
+    @http_utils.exponential_backoff()
     async def get_video(self, submission):
         media = []
 
         async with self.get(submission["full_link"] + ".json", timeout=30, headers={"User-Agent": "Mozilla/5.0"}) as r:
-            utils.log_response(r, self.logger)
+            log_utils.log_response(r, self.logger)
             if r.status == 200:
                 response = await r.json()
 
@@ -271,22 +278,23 @@ class ArchiveMediaStep:
                 audio_link = submission["url"] + "/DASH_audio.mp4"
 
                 async with self.get(video_link, timeout=30) as vr:
-                    utils.log_response(vr, self.logger)
+                    log_utils.log_response(vr, self.logger)
                     if vr.status == 200:
                         media.append(("video.mp4", await vr.read()))
 
                 async with self.get(audio_link, timeout=30) as ar:
-                    utils.log_response(ar, self.logger)
+                    log_utils.log_response(ar, self.logger)
                     if ar.status == 200:
                         media.append(("audio.mp4", await ar.read()))
 
         return media
 
+    @http_utils.exponential_backoff()
     async def get_image(self, url):
         media = []
 
         async with self.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"}) as r:
-            utils.log_response(r, self.logger)
+            log_utils.log_response(r, self.logger)
             if r.status == 200:
                 image_name = url.rsplit("/", 1)[-1]
                 media.append((image_name, await r.read()))

@@ -1,18 +1,18 @@
-import asyncio
-
-import utils
+import http_utils
+import log_utils
 
 __session = None
 
-__logger = utils.get_logger(__name__)
+__logger = log_utils.get_logger(__name__)
 
 
+@http_utils.exponential_backoff(logger=__logger)
 async def request(endpoint, **kwargs):
     global __session
 
     if __session is None:
         __logger.info("Initialising session...")
-        __session = utils.ThrottledClientSession(1)
+        __session = http_utils.ThrottledClientSession(1)
         __logger.info(f"Session created: {__session}")
 
     params = {
@@ -27,21 +27,18 @@ async def request(endpoint, **kwargs):
 
         params[key] = value
 
-    for i in range(5):
-        # ThrottledClientSession only works per process, other workers may exist on the device if it has multiple cores.
-        # Therefore, use exponential backoff if responses start hitting the rate limit.
-        # Five attempts *should* be enough, but if not, an exception will be raised.
-        async with __session.get("https://api.pushshift.io/reddit/" + endpoint, params=params, timeout=30) as r:
-            utils.log_response(r, __logger)
+    async with __session.get("https://api.pushshift.io/reddit/" + endpoint, params=params, timeout=30) as r:
+        log_utils.log_response(r, __logger)
 
-            if r.status == 200:
-                response = await r.json()
-                return response["data"]
-            elif r.status != 429:
-                break
+        if r.status == 200:
+            response = await r.json()
 
-            delay = 2 ** i
-            __logger.warning(f"Rate limit hit, retrying in {delay} sec.")
-            await asyncio.sleep(2 ** i)
+            if response is None or response["data"] is None:
+                raise http_utils.ResponseInvalid(f"No data returned for {r.url}")
 
-    raise Exception("The rate limit was exceeded and could not be resolved after the maximum number of retries.")
+            return response["data"]
+
+        elif r.status == 429:
+            raise http_utils.RateLimitExceeded
+
+        raise http_utils.ResponseInvalid(f"No data returned for {r.url}")

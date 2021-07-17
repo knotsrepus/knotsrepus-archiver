@@ -1,9 +1,68 @@
+import asyncio
+import functools
 import logging
+import time
 from typing import Optional
 
 import aiohttp
-import asyncio
-import time
+import aiohttp.client_exceptions
+
+
+class ResponseInvalid(Exception):
+    pass
+
+
+class RateLimitExceeded(Exception):
+    pass
+
+
+class MaxAttemptsExceeded(Exception):
+    pass
+
+
+def exponential_backoff(max_attempts=6, logger: logging.Logger = None):
+
+    def decorator(fn):
+        @functools.wraps(fn)
+        async def wrapper(*args, **kwargs):
+            if logger is None and hasattr(args[0], "logger"):
+                _logger = args[0].logger
+            else:
+                _logger = logger
+
+            for i in range(max_attempts):
+                try:
+                    return await fn(*args, **kwargs)
+                except RateLimitExceeded:
+                    # ThrottledClientSession only works per process, other workers may exist on the device if it has
+                    # multiple cores.
+                    # Therefore, use exponential backoff if responses start hitting the rate limit.
+                    if _logger is not None:
+                        _logger.warning("Rate limit exceeded.")
+                except ResponseInvalid as e:
+                    # A response was received, but not what was expected.
+                    if _logger is not None:
+                        _logger.warning("An invalid response was received.", exc_info=e, stacklevel=1)
+                except aiohttp.client_exceptions.ClientError as e:
+                    # Transient connection errors should also use exponential backoff.
+                    if _logger is not None:
+                        _logger.warning("There was a connection error.", exc_info=e, stacklevel=1)
+                except asyncio.exceptions.TimeoutError as e:
+                    # As should timeouts.
+                    if _logger is not None:
+                        _logger.warning("A timeout occurred.", exc_info=e, stacklevel=1)
+
+                delay = 2 ** i
+                if _logger is not None:
+                    _logger.warning(f"Retrying in {delay} sec.")
+
+                await asyncio.sleep(delay)
+
+            raise MaxAttemptsExceeded
+
+        return wrapper
+
+    return decorator
 
 
 class ThrottledClientSession(aiohttp.ClientSession):
@@ -77,20 +136,3 @@ class ThrottledClientSession(aiohttp.ClientSession):
         """Throttled _request()"""
         await self._allow()
         return await super()._request(*args, **kwargs)
-
-
-def get_logger(name):
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter("[%(asctime)s][%(name)s:%(lineno)d] %(levelname)s: %(message)s"))
-
-    logger = logging.Logger(name, logging.INFO)
-    logger.addHandler(handler)
-
-    return logger
-
-
-def log_response(response, logger):
-    if response.ok:
-        logger.info(f"{response.url} {response.status} {response.reason}")
-    else:
-        logger.warning(f"{response.url} {response.status} {response.reason}")

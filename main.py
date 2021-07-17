@@ -6,7 +6,7 @@ import ray
 
 import archiver
 import filesystem
-import utils
+import log_utils
 
 
 def iso_8601_or_unix_timestamp(string):
@@ -58,7 +58,7 @@ def parse_args():
 
 
 if __name__ == "__main__":
-    logger = utils.get_logger("knotsrepus-archiver")
+    logger = log_utils.get_logger("knotsrepus-archiver")
 
     args = parse_args()
 
