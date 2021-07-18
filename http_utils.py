@@ -1,6 +1,7 @@
 import asyncio
 import functools
 import logging
+import random
 import time
 from typing import Optional
 
@@ -52,7 +53,7 @@ def exponential_backoff(max_attempts=6, logger: logging.Logger = None):
                     if _logger is not None:
                         _logger.warning("A timeout occurred.", exc_info=e, stacklevel=1)
 
-                delay = 2 ** i
+                delay = round((2 ** i) + abs(random.normalvariate(0, 0.33 * (2 ** i))), 3)
                 if _logger is not None:
                     _logger.warning(f"Retrying in {delay} sec.")
 
