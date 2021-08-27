@@ -1,8 +1,11 @@
-aiofiles==0.7.0
-aiohttp==3.7.4.post0
-ray==1.4.0
+-e .
+pytest==6.2.4
 
-aioboto3==9.0.0
-python-dateutil==2.8.1
-boto3==1.17.49
-botocore==1.20.49
+aws-cdk.core==1.119.0
+aws-cdk.aws-sns==1.119.0
+aws-cdk.aws-dynamodb==1.119.0
+aws-cdk.aws-ecs==1.119.0
+aws-cdk.aws-lambda==1.119.0
+aws-cdk.aws-s3==1.119.0
+aws-cdk.aws-sns==1.119.0
+aws-cdk.aws-sns-subscriptions==1.119.0

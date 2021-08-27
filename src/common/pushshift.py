@@ -1,5 +1,5 @@
-import http_utils
-import log_utils
+from . import http_utils
+from . import log_utils
 
 __session = None
 
