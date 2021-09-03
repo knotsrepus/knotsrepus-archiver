@@ -109,7 +109,8 @@ class KnotsrepusArchiverStack(core.Stack):
             desired_count=1,
             capacity_provider_strategies=[
                 ecs.CapacityProviderStrategy(capacity_provider="FARGATE", weight=1)
-            ]
+            ],
+            assign_public_ip=True
         )
 
         config_table.grant_read_write_data(submission_finder_task_definition.task_role)
