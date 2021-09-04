@@ -3,52 +3,18 @@ import os
 from datetime import datetime
 
 import aioboto3
-from boto3.dynamodb.conditions import Key
 
 from src.common import log_utils, pushshift
+from src.common.archiver_config import DynamoDBConfigSource, StubConfigSource, ArchiverConfigSource, ArchiverConfig
+from src.common.messaging import SNSMessagingService, StubMessagingService, MessagingService
 
 
-async def get_config(session: aioboto3.Session):
-    async with session.resource("dynamodb") as dynamodb:
-        table = await dynamodb.Table(os.environ.get("CONFIG_TABLE_NAME"))
-
-        response = await table.query(KeyConditionExpression=Key("key").eq("after_utc"))
-        items = response["Items"]
-        after_utc = int(max(items, key=lambda item: item["version"])["value"]) if len(items) > 0 else 0
-
-        return {
-            "after_utc": after_utc,
-        }
-
-
-async def put_config(session: aioboto3.Session, config: dict):
-    async with session.resource("dynamodb") as dynamodb:
-        table = await dynamodb.Table(os.environ.get("CONFIG_TABLE_NAME"))
-
-        await table.put_item(
-            Item={
-                "key": "after_utc",
-                "version": int(datetime.utcnow().timestamp()),
-                "value": int(config["after_utc"]),
-            }
-        )
-
-
-async def request_archival(session: aioboto3.Session, submission_id: str):
-    async with session.client("sns") as sns:
-        await sns.publish(
-            TopicArn=os.environ.get("ARCHIVAL_REQUESTED_TOPIC_ARN"),
-            Message=submission_id
-        )
-
-
-async def main():
+async def main(config_source: ArchiverConfigSource, messaging_service: MessagingService):
     logger = log_utils.get_logger("submission-finder")
     logger.info("Retrieving /r/superstonk submissions...")
 
-    session = aioboto3.Session()
-    config = await get_config(session)
-    after_utc = config["after_utc"]
+    config = await config_source.get_config()
+    after_utc = config.after_utc
     submission_count = 0
 
     while True:
@@ -71,10 +37,24 @@ async def main():
         submission_count += len(chunk)
 
         for submission in chunk:
-            await request_archival(session, submission["id"])
+            await messaging_service.send_message(submission["id"])
 
-        await put_config(session, {"after_utc": after_utc})
+        await config_source.put_config(ArchiverConfig(after_utc=after_utc))
 
 
 if __name__ == "__main__":
-    asyncio.get_event_loop().run_until_complete(main())
+    session = aioboto3.Session()
+
+    table_name = os.environ.get("CONFIG_TABLE_NAME")
+    if table_name is not None:
+        config_source = DynamoDBConfigSource(session, table_name)
+    else:
+        config_source = StubConfigSource()
+
+    topic_arn = os.environ.get("ARCHIVAL_REQUESTED_TOPIC_ARN")
+    if topic_arn is not None:
+        messaging_service = SNSMessagingService(session, topic_arn)
+    else:
+        messaging_service = StubMessagingService()
+
+    asyncio.get_event_loop().run_until_complete(main(config_source, messaging_service))
