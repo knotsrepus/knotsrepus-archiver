@@ -8,64 +8,171 @@ Archiver for https://reddit.com/r/Superstonk
 
 - Python 3.8+
 - pip
-- [Ray](https://docs.ray.io/en/master/installation.html)
-- Docker (optional, recommended for Windows)
-- An AWS account (required for cluster mode)
+- NPM and the [AWS Cloud Development Kit (CDK)](https://github.com/aws/aws-cdk)
+- Docker
+- An AWS account
 
-### Installing
+### Setup
 
 ```shell
 git clone https://github.com/knotsrepus/knotsrepus-archiver.git
 cd knotsrepus-archiver/
-python -m pip install -r requirements.txt
+python -m pip install -r requirements.txt -r src/requirements.txt
 ```
 
 ### Running
 
-#### Local mode
-This will run all workers on your device and output the result to the specified folder.
+#### Local development
+The Lambda functions can be tested locally by making changes to their `event.json` file and then
+invoking them as a regular Python script:
 
 ```shell
-python main.py --local $OUTPUT_PATH -a $AFTER_UTC -b $BEFORE_UTC -c $LOCAL_COMMENTS_WORKERS -m $LOCAL_MEDIA_WORKERS
+cd src/archive-comments-lambda
+PYTHONPATH=../../ python main.py 
 ```
 
-#### Cluster mode
-This will run workers on an AWS cluster and output the result into an S3 bucket.
-Note that you will need an AWS account to use this feature.
+ECS services can be tested locally either by invoking them as a Python script or through Docker.
+
+To invoke as a regular script:
 
 ```shell
-ray up --no-config-cache config.yaml
-ray exec --no-config-cache config.yaml "cd ~/app/ && python main.py --cluster $CLUSTER_BUCKET $CLUSTER_REGION $AWS_ACCESS_KEY_ID $AWS_SECRET_ACCESS_KEY -a $AFTER_UTC -b $BEFORE_UTC -c $CLUSTER_COMMENTS_WORKERS -m $CLUSTER_MEDIA_WORKERS"
-ray down config.yaml
+cd src/submission-finder
+PYTHONPATH=../../ python main.py
 ```
 
-#### Docker
-The Docker image supports both local and cluster mode.
+To use Docker:
 
 ```shell
-docker build -t knotsrepus-archiver .
-docker run -p 8265:8265 -v ./out/:/app/out/ --shm-size 2gb knotsrepus-archiver $ARGS 
+cd src
+docker build -f submission-finder/Dockerfile -t knotsrepus-archiver-submission-finder .
+docker run --name submission-finder knotsrepus-archiver-submission-finder
 ```
 
-## Help
-
+#### AWS
+To generate the CloudFormation template:
 ```shell
-python main.py -h
+npx aws-cdk synth
 ```
 
-- `-h`, `--help`: show the help message and exit
-- `--local $OUTPUT_PATH`: runs the archiver locally and outputs to the specified directory
-- `--cluster $CLUSTER_BUCKET $CLUSTER_REGION $AWS_ACCESS_KEY_ID $AWS_SECRET_ACCESS_KEY`:
-  runs the archiver on AWS in the specified region and outputs to the specified S3 bucket
-- `-a $TIME`, `--after $TIME`: archive submissions after a particular time. 
-  Accepts either an ISO 8601 datetime or a UNIX timestamp.
-- `-b $TIME`, `--before $TIME`: archive submissions before a particular time.
-  Accepts either an ISO 8601 datetime or a UNIX timestamp.
-- `-c $COMMENTS_WORKERS`, `--comments-workers $COMMENTS_WORKERS`:
-  specifies the number of workers to use when archiving comments (default: 2)
-- `-m $MEDIA_WORKERS`, `--media-workers $MEDIA_WORKERS`:
-  specifies the number of workers to use when archiving media (default: 2)
+To deploy to AWS:
+```shell
+npx aws-cdk deploy
+```
 
+In order to successfully deploy, the credentials used will require the following policy document:
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "VisualEditor0",
+            "Effect": "Allow",
+            "Action": [
+                "s3:PutAccessPointPolicyForObjectLambda",
+                "s3:PutBucketPublicAccessBlock",
+                "sns:GetTopicAttributes",
+                "sns:DeleteTopic",
+                "sns:CreateTopic",
+                "ecs:DeleteService",
+                "s3:DeleteBucketPolicy",
+                "s3:BypassGovernanceRetention",
+                "ecs:DescribeClusters",
+                "ecs:UpdateService",
+                "iam:PassRole",
+                "s3:ObjectOwnerOverrideToBucketOwner",
+                "ecs:CreateService",
+                "s3:DeleteAccessPointPolicyForObjectLambda",
+                "s3:PutObjectVersionAcl",
+                "s3:PutBucketAcl",
+                "s3:PutBucketPolicy",
+                "sns:Subscribe",
+                "s3:DeleteAccessPointPolicy",
+                "ecs:DescribeServices",
+                "s3:PutAccessPointPolicy",
+                "s3:PutObjectAcl",
+                "ecs:PutClusterCapacityProviders"
+            ],
+            "Resource": [
+                "arn:aws:iam::<YOUR_ACCOUNT_ID>:role/*",
+                "arn:aws:sns:*:<YOUR_ACCOUNT_ID>:KnotsrepusArchiver-*",
+                "arn:aws:s3:::cdk-stagingbucket-*",
+                "arn:aws:s3:::knotrepusarchiver-*",
+                "arn:aws:s3:*:<YOUR_ACCOUNT_ID>:accesspoint/*",
+                "arn:aws:s3:::*/*",
+                "arn:aws:s3-object-lambda:*:<YOUR_ACCOUNT_ID>:accesspoint/*",
+                "arn:aws:ecs:*:<YOUR_ACCOUNT_ID>:cluster/KnotsrepusArchiver-*",
+                "arn:aws:ecs:*:<YOUR_ACCOUNT_ID>:capacity-provider/KnotsrepusArchiver-*",
+                "arn:aws:ecs:*:<YOUR_ACCOUNT_ID>:service/KnotsrepusArchiver-*"
+            ]
+        },
+        {
+            "Sid": "VisualEditor1",
+            "Effect": "Allow",
+            "Action": "ecs:DeleteCluster",
+            "Resource": "arn:aws:ecs:*:<YOUR_ACCOUNT_ID>:cluster/KnotsrepusArchiver-*"
+        },
+        {
+            "Sid": "VisualEditor2",
+            "Effect": "Allow",
+            "Action": [
+                "logs:GetLogRecord",
+                "sns:Unsubscribe",
+                "logs:GetLogDelivery",
+                "ecr:PutRegistryPolicy",
+                "logs:ListLogDeliveries",
+                "ecs:DeregisterTaskDefinition",
+                "ec2:DescribeInternetGateways",
+                "logs:DeleteResourcePolicy",
+                "ecs:RegisterTaskDefinition",
+                "logs:CancelExportTask",
+                "logs:DeleteLogDelivery",
+                "logs:DescribeQueryDefinitions",
+                "logs:PutDestination",
+                "logs:DescribeResourcePolicies",
+                "logs:DescribeDestinations",
+                "logs:DescribeQueries",
+                "ecr:GetRegistryPolicy",
+                "s3:PutAccountPublicAccessBlock",
+                "ecs:CreateCluster",
+                "logs:PutDestinationPolicy",
+                "ecr:DescribeRegistry",
+                "ecr:GetAuthorizationToken",
+                "logs:StopQuery",
+                "logs:TestMetricFilter",
+                "logs:DeleteDestination",
+                "logs:DeleteQueryDefinition",
+                "logs:PutQueryDefinition",
+                "logs:CreateLogDelivery",
+                "logs:PutResourcePolicy",
+                "logs:DescribeExportTasks",
+                "logs:GetQueryResults",
+                "logs:UpdateLogDelivery",
+                "ec2:DescribeVpcs",
+                "ec2:*",
+                "ecr:DeleteRegistryPolicy",
+                "ecr:PutReplicationConfiguration"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "VisualEditor3",
+            "Effect": "Allow",
+            "Action": "logs:*",
+            "Resource": [
+                "arn:aws:logs:*:<YOUR_ACCOUNT_ID>:log-group:*:log-stream:*",
+                "arn:aws:logs:*:<YOUR_ACCOUNT_ID>:log-group:KnotsrepusArchiver-*"
+            ]
+        },
+        {
+            "Sid": "VisualEditor4",
+            "Effect": "Allow",
+            "Action": "ecr:*",
+            "Resource": "arn:aws:ecr:*:<YOUR_ACCOUNT_ID>:repository/aws-cdk/assets"
+        }
+    ]
+}
+```
 
 ## Contributors
 
