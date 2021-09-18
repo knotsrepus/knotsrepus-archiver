@@ -120,6 +120,41 @@ class KnotsrepusArchiverStack(core.Stack):
             ]
         )
 
+        default_security_group = ec2.SecurityGroup.from_security_group_id(
+            self,
+            "SecurityGroup",
+            vpc.vpc_default_security_group
+        )
+
+        vpc.add_interface_endpoint(
+            "SecretsManagerEndpoint",
+            service=ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
+            security_groups=[default_security_group]
+        )
+        vpc.add_interface_endpoint(
+            "EcrDockerEndpoint",
+            service=ec2.InterfaceVpcEndpointAwsService.ECR_DOCKER,
+            security_groups=[default_security_group]
+        )
+        vpc.add_interface_endpoint(
+            "EcrApiEndpoint",
+            service=ec2.InterfaceVpcEndpointAwsService.ECR,
+            security_groups=[default_security_group]
+        )
+        vpc.add_interface_endpoint(
+            "CloudWatchEndpoint",
+            service=ec2.InterfaceVpcEndpointAwsService.CLOUDWATCH_LOGS,
+            security_groups=[default_security_group]
+        )
+        vpc.add_gateway_endpoint(
+            "S3Endpoint",
+            service=ec2.GatewayVpcEndpointAwsService.S3
+        )
+        vpc.add_gateway_endpoint(
+            "DynamoDbEndpoint",
+            service=ec2.GatewayVpcEndpointAwsService.DYNAMODB
+        )
+
         cluster = ecs.Cluster(
             self,
             "Cluster",
