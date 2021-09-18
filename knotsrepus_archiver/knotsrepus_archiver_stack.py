@@ -2,6 +2,7 @@ import os
 
 from aws_cdk import (
     aws_dynamodb as dynamodb,
+    aws_ec2 as ec2,
     aws_ecs as ecs,
     aws_lambda as lambda_,
     aws_s3 as s3,
@@ -22,6 +23,12 @@ class KnotsrepusArchiverStack(core.Stack):
             "Configuration",
             partition_key=dynamodb.Attribute(name="key", type=dynamodb.AttributeType.STRING),
             sort_key=dynamodb.Attribute(name="version", type=dynamodb.AttributeType.NUMBER),
+        )
+
+        metadata_table = dynamodb.Table(
+            self,
+            "ArchiveMetadata",
+            partition_key=dynamodb.Attribute(name="submission_id", type=dynamodb.AttributeType.STRING)
         )
 
         archival_requested_topic = sns.Topic(
@@ -95,10 +102,29 @@ class KnotsrepusArchiverStack(core.Stack):
             logging=ecs.LogDriver.aws_logs(stream_prefix=core.Aws.STACK_NAME)
         )
 
+        vpc = ec2.Vpc(
+            self,
+            "Vpc",
+            max_azs=2,
+            subnet_configuration=[
+                ec2.SubnetConfiguration(
+                    name="SubmissionFinderSubnet",
+                    subnet_type=ec2.SubnetType.PUBLIC,
+                    cidr_mask=24
+                ),
+                ec2.SubnetConfiguration(
+                    name="MetadataGeneratorSubnet",
+                    subnet_type=ec2.SubnetType.ISOLATED,
+                    cidr_mask=24
+                )
+            ]
+        )
+
         cluster = ecs.Cluster(
             self,
-            "SubmissionFinderCluster",
-            enable_fargate_capacity_providers=True
+            "Cluster",
+            enable_fargate_capacity_providers=True,
+            vpc=vpc
         )
 
         submission_finder_service = ecs.FargateService(
@@ -115,6 +141,43 @@ class KnotsrepusArchiverStack(core.Stack):
 
         config_table.grant_read_write_data(submission_finder_task_definition.task_role)
         archival_requested_topic.grant_publish(submission_finder_task_definition.task_role)
+
+        metadata_generator_task_definition = ecs.FargateTaskDefinition(
+            self,
+            "MetadataGeneratorDefinition",
+            memory_limit_mib=512,
+            cpu=256
+        )
+
+        metadata_generator_task_definition.add_container(
+            "MetadataGenerator",
+            image=ecs.ContainerImage.from_asset(
+                os.path.abspath("src"),
+                file="metadata-generator/Dockerfile"
+            ),
+            environment={
+                "CONFIG_TABLE_NAME": config_table.table_name,
+                "METADATA_TABLE_NAME": metadata_table.table_name,
+                "ARCHIVE_DATA_BUCKET": archive_data_bucket.bucket_name
+            },
+            logging=ecs.LogDriver.aws_logs(stream_prefix=core.Aws.STACK_NAME)
+        )
+
+        metadata_generator_service = ecs.FargateService(
+            self,
+            "MetadataGeneratorService",
+            cluster=cluster,
+            task_definition=metadata_generator_task_definition,
+            desired_count=1,
+            capacity_provider_strategies=[
+                ecs.CapacityProviderStrategy(capacity_provider="FARGATE", weight=1)
+            ],
+            vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.ISOLATED)
+        )
+
+        config_table.grant_read_write_data(metadata_generator_task_definition.task_role)
+        metadata_table.grant_read_write_data(metadata_generator_task_definition.task_role)
+        archive_data_bucket.grant_read(metadata_generator_task_definition.task_role)
 
     @staticmethod
     def get_lambda_asset(path: str) -> lambda_.Code:

@@ -5,7 +5,7 @@ from datetime import datetime
 import aioboto3
 
 from src.common import log_utils, pushshift
-from src.common.archiver_config import DynamoDBConfigSource, StubConfigSource, ArchiverConfigSource, ArchiverConfig
+from src.common.archiver_config import DynamoDBConfigSource, StubConfigSource, ArchiverConfigSource
 from src.common.messaging import SNSMessagingService, StubMessagingService, MessagingService
 
 
@@ -13,8 +13,7 @@ async def main(config_source: ArchiverConfigSource, messaging_service: Messaging
     logger = log_utils.get_logger("submission-finder")
     logger.info("Retrieving /r/superstonk submissions...")
 
-    config = await config_source.get_config()
-    after_utc = config.after_utc
+    after_utc = int(await config_source.get_config("after_utc") or 0)
     submission_count = 0
 
     while True:
@@ -39,7 +38,7 @@ async def main(config_source: ArchiverConfigSource, messaging_service: Messaging
         for submission in chunk:
             await messaging_service.send_message(submission["id"])
 
-        await config_source.put_config(ArchiverConfig(after_utc=after_utc))
+        await config_source.put_config(after_utc=after_utc)
 
 
 if __name__ == "__main__":
