@@ -84,6 +84,6 @@ class S3FileSystem(FileSystem):
     async def read(self, path):
         async with self.session.client("s3") as s3:
             response = await s3.get_object(Bucket=self.bucket_name, Key=path)
-            body = await response["Body"]
+            body = response["Body"]
 
             return await body.read()
