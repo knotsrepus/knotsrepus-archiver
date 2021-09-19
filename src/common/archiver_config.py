@@ -40,9 +40,9 @@ class DynamoDBConfigSource(ArchiverConfigSource):
         async with self.session.resource("dynamodb") as dynamodb:
             table = await dynamodb.Table(self.table_name)
 
-            response = await table.query(KeyConditionExpression=Key("key").eq(key))
+            response = await table.query(KeyConditionExpression=Key("key").eq(key), ScanIndexForward=False, Limit=1)
             items = response["Items"]
-            return max(items, key=lambda item: item["version"])["value"] if len(items) > 0 else None
+            return items[0]["value"] if len(items) > 0 else None
 
     async def put_config(self, **kwargs):
         async with self.session.resource("dynamodb") as dynamodb:
