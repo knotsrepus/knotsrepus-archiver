@@ -79,7 +79,7 @@ class S3FileSystem(FileSystem):
             paginator = s3.get_paginator("list_objects_v2")
             async for result in paginator.paginate(Bucket=self.bucket_name, Delimiter="/", **kwargs):
                 for prefix in result["CommonPrefixes"]:
-                    yield prefix
+                    yield prefix["Prefix"]
 
     async def read(self, path):
         async with self.session.client("s3") as s3:
