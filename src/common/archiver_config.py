@@ -3,22 +3,17 @@ from datetime import datetime
 
 import aioboto3
 from boto3.dynamodb.conditions import Key
-from pydantic import BaseModel
 
 from src.common import log_utils
 
 
-class ArchiverConfig(BaseModel):
-    after_utc: int
-
-
 class ArchiverConfigSource(ABC):
     @abstractmethod
-    async def get_config(self):
+    async def get_config(self, key: str):
         pass
 
     @abstractmethod
-    async def put_config(self, config: ArchiverConfig):
+    async def put_config(self, **kwargs):
         pass
 
 
@@ -26,11 +21,14 @@ class StubConfigSource(ArchiverConfigSource):
     def __init__(self):
         self.logger = log_utils.get_logger(__name__)
 
-    async def get_config(self):
-        return ArchiverConfig(after_utc=1623196800)
+    async def get_config(self, key: str):
+        if key == "after_utc":
+            return 1623196800
+        else:
+            return "testid"
 
-    async def put_config(self, config: ArchiverConfig):
-        self.logger.info(f"Stubbed: put_config {config}")
+    async def put_config(self, **kwargs):
+        self.logger.info(f"Stubbed: put_config {kwargs}")
 
 
 class DynamoDBConfigSource(ArchiverConfigSource):
@@ -38,26 +36,26 @@ class DynamoDBConfigSource(ArchiverConfigSource):
         self.session = session
         self.table_name = table_name
 
-    async def get_config(self):
+    async def get_config(self, key):
         async with self.session.resource("dynamodb") as dynamodb:
             table = await dynamodb.Table(self.table_name)
 
-            response = await table.query(KeyConditionExpression=Key("key").eq("after_utc"))
+            response = await table.query(KeyConditionExpression=Key("key").eq(key), ScanIndexForward=False, Limit=1)
             items = response["Items"]
-            after_utc = int(max(items, key=lambda item: item["version"])["value"]) if len(items) > 0 else 0
+            return items[0]["value"] if len(items) > 0 else None
 
-            return ArchiverConfig(after_utc=after_utc)
-
-    async def put_config(self, config: ArchiverConfig):
+    async def put_config(self, **kwargs):
         async with self.session.resource("dynamodb") as dynamodb:
             table = await dynamodb.Table(self.table_name)
 
             version = int(datetime.utcnow().timestamp())
 
-            await table.put_item(
-                Item={
-                    "key": "after_utc",
-                    "version": version,
-                    "value": config.after_utc,
-                }
-            )
+            async with table.batch_writer() as batch:
+                for key, value in kwargs.items():
+                    await batch.put_item(
+                        Item={
+                            "key": key,
+                            "version": version,
+                            "value": value,
+                        }
+                    )

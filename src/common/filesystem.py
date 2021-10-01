@@ -1,3 +1,4 @@
+import json
 from abc import ABC, abstractmethod
 
 import aioboto3
@@ -18,6 +19,16 @@ class FileSystem(ABC):
     async def write_raw(self, path, data):
         pass
 
+    # noinspection PyUnreachableCode
+    @abstractmethod
+    async def list_dirs(self, **kwargs):
+        if False:
+            yield
+
+    @abstractmethod
+    async def read(self, path):
+        pass
+
 
 class StubFileSystem(FileSystem):
     def __init__(self):
@@ -31,6 +42,19 @@ class StubFileSystem(FileSystem):
 
     async def write_raw(self, path, data):
         self.logger.info(f"Stubbed: write_raw {len(data)} bytes to {path}")
+
+    async def list_dirs(self, **kwargs):
+        for dir in ["testid", "testic", "testib", "testia", "testi9"]:
+            yield f"{dir}/"
+
+    async def read(self, path):
+        return json.dumps({
+            "link_flair_text": "DD",
+            "created_utc": 1630450800,
+            "author": "VoxUmbra",
+            "title": path,
+            "score": 1,
+        })
 
 
 class S3FileSystem(FileSystem):
@@ -49,3 +73,17 @@ class S3FileSystem(FileSystem):
 
     async def write_raw(self, path, data):
         await self.write(path, data)
+
+    async def list_dirs(self, **kwargs):
+        async with self.session.client("s3") as s3:
+            paginator = s3.get_paginator("list_objects_v2")
+            async for result in paginator.paginate(Bucket=self.bucket_name, Delimiter="/", **kwargs):
+                for prefix in result["CommonPrefixes"]:
+                    yield prefix["Prefix"]
+
+    async def read(self, path):
+        async with self.session.client("s3") as s3:
+            response = await s3.get_object(Bucket=self.bucket_name, Key=path)
+            body = response["Body"]
+
+            return await body.read()
