@@ -1,16 +1,18 @@
 import os
 
 from aws_cdk import (
+    aws_apigateway as apigateway,
+    aws_certificatemanager as certificatemanager,
     aws_dynamodb as dynamodb,
     aws_ec2 as ec2,
     aws_ecs as ecs,
     aws_lambda as lambda_,
+    aws_route53 as route53,
     aws_s3 as s3,
     aws_sns as sns,
     aws_sns_subscriptions as subscriptions,
     core
 )
-
 
 class KnotsrepusArchiverStack(core.Stack):
     def __init__(self, scope: core.Construct, construct_id: str, **kwargs) -> None:
@@ -72,6 +74,11 @@ class KnotsrepusArchiverStack(core.Stack):
         archival_requested_topic.add_subscription(subscriptions.LambdaSubscription(archive_submission_lambda))
         archival_requested_topic.add_subscription(subscriptions.LambdaSubscription(archive_comments_lambda))
         archival_requested_topic.add_subscription(subscriptions.LambdaSubscription(archive_media_lambda))
+
+        knotsrepus_api_backend_lambda, knotsrepus_api_gateway = self.create_knotsrepus_api(
+            archive_data_bucket,
+            metadata_table
+        )
 
         cluster = self.create_cluster()
 
@@ -229,6 +236,43 @@ class KnotsrepusArchiverStack(core.Stack):
         ).scale_on_utilization(target_utilization_percent=70)
 
         return metadata_table
+
+    def create_knotsrepus_api(self, archive_data_bucket: s3.Bucket, metadata_table: dynamodb.Table):
+        knotsrepus_api_backend_lambda = lambda_.Function(
+            self,
+            "KnotsrepusApiBackend",
+            runtime=lambda_.Runtime.PYTHON_3_8,
+            handler="main.handler",
+            code=KnotsrepusArchiverStack.get_lambda_asset("./knotsrepus-api-lambda"),
+            environment={
+                "ARCHIVE_DATA_BUCKET": archive_data_bucket.bucket_name,
+                "METADATA_TABLE_NAME": metadata_table.table_name,
+            }
+        )
+
+        archive_data_bucket.grant_read(knotsrepus_api_backend_lambda.role)
+        metadata_table.grant_read_data(knotsrepus_api_backend_lambda.role)
+
+        knotsrepus_api_gateway = apigateway.LambdaRestApi(
+            self,
+            "KnotsrepusApiGateway",
+            handler=knotsrepus_api_backend_lambda,
+            domain_name=apigateway.DomainName(
+                domain_name="api.knotsrepus.net",
+                certificate=certificatemanager.Certificate(
+                    domain_name="*.knotsrepus.net",
+                    subject_alternative_names=["knotsrepus.net"],
+                    validation=certificatemanager.CertificateValidation.from_dns(
+                        hosted_zone=route53.PublicHostedZone.from_lookup(
+                            domain_name="knotsrepus.net",
+                            private_zone=False
+                        )
+                    )
+                )
+            )
+        )
+
+        return knotsrepus_api_backend_lambda, knotsrepus_api_gateway
 
     def create_cluster(self):
         vpc = ec2.Vpc(
