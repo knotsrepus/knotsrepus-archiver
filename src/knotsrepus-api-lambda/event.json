@@ -1,0 +1,12 @@
+{
+  "resource": "/submission/",
+  "pathParameters": {
+    "submission_id": "ml197j",
+    "filename": "714v1izjogr61.png"
+  },
+  "queryStringParameters": {
+    "post_type": "dd",
+    "sort": "score",
+    "sort_order": "desc"
+  }
+}
