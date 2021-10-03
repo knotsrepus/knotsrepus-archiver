@@ -264,6 +264,8 @@ class KnotsrepusArchiverStack(core.Stack):
                     subject_alternative_names=["knotsrepus.net"],
                     validation=certificatemanager.CertificateValidation.from_dns(
                         hosted_zone=route53.PublicHostedZone.from_lookup(
+                            self,
+                            "HostedZone",
                             domain_name="knotsrepus.net",
                             private_zone=False
                         )
