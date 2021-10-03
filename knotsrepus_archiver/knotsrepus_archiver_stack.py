@@ -260,6 +260,8 @@ class KnotsrepusArchiverStack(core.Stack):
             domain_name=apigateway.DomainName(
                 domain_name="api.knotsrepus.net",
                 certificate=certificatemanager.Certificate(
+                    self,
+                    "Certificate",
                     domain_name="*.knotsrepus.net",
                     subject_alternative_names=["knotsrepus.net"],
                     validation=certificatemanager.CertificateValidation.from_dns(
