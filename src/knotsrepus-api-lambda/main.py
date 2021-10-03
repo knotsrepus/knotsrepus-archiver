@@ -39,23 +39,20 @@ def format_response(status_code, content_type, body):
 
 
 def dispatch_event_to_api_controller(event, context):
-    resource = event.get("resource")
+    path = event.get("path")
 
-    if resource.endswith("/"):
-        resource = resource[:-1]
+    if path.endswith("/"):
+        path = path[:-1]
 
-    if not rest.route_is_defined(resource):
+    if not rest.route_is_defined(path):
         return format_response(400,
                                "application/json",
-                               {"message": f"No controller function defined to handle resource '{resource}'"})
+                               {"message": f"No controller function defined to handle path '{path}'"})
 
     api = get_api_controller(context)
-    path_params = event.get("pathParameters") or dict()
     query_params = event.get("queryStringParameters") or dict()
 
-    params = {**path_params, **query_params}
-
-    (content_type, body) = rest.dispatch(resource, api, **params)
+    (content_type, body) = rest.dispatch(path, api, **query_params)
 
     return format_response(200, content_type, body)
 
