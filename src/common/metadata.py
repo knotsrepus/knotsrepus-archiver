@@ -8,7 +8,7 @@ from src.common import log_utils
 
 class MetadataService(ABC):
     @abstractmethod
-    async def list(self, after_id=None, limit=100, sort=None, sort_order="asc"):
+    async def list(self, after_id=None, limit=100):
         pass
 
     @abstractmethod
@@ -38,35 +38,22 @@ class DynamoDBMetadataService(MetadataService):
         self.session = session
         self.table_name = table_name
 
-    async def list(self, after_id=None, limit=100, sort=None, sort_order="asc"):
-        if sort_order not in ["asc", "desc"]:
-            raise Exception("The sort order must be either 'asc' or 'desc'.")
-
+    async def list(self, after_id=None, limit=100):
         limit = min(limit, 100)
-        if sort is None:
-            index_name = None
-        else:
-            index_name = DynamoDBMetadataService.index_for_key_and_sort[(sort, None)]
 
         async with self.session.resource("dynamodb") as dynamodb:
             table = await dynamodb.Table(self.table_name)
 
-            if after_id is None:
-                start_key = None
-            else:
-                start_key = {
+            kwargs = {
+                "Limit": limit,
+            }
+
+            if after_id is not None:
+                kwargs["ExclusiveStartKey"] = {
                     "submission_id": after_id,
                 }
-                item = (await table.get_item(Key={"submission_id": after_id})).get("Item")
-                if sort is not None:
-                    start_key[sort] = item.get(sort)
 
-            response = await table.scan(
-                IndexName=index_name,
-                ScanIndexForward=sort_order == "asc",
-                ExclusiveStartKey=start_key,
-                Limit=limit,
-            )
+            response = await table.scan(**kwargs)
 
             return response["Items"]
 
@@ -103,15 +90,24 @@ class DynamoDBMetadataService(MetadataService):
             raise Exception("The sort order must be either 'asc' or 'desc'.")
 
         limit = min(limit, 100)
-        key_name = key_condition.get_expression().values()[0].name
+
+        key_name = DynamoDBMetadataService.get_key_name(key_condition)
         index_name = DynamoDBMetadataService.index_for_key_and_sort[(key_name, sort)]
 
         async with self.session.resource("dynamodb") as dynamodb:
             table = await dynamodb.Table(self.table_name)
 
-            if after_id is None:
-                start_key = None
-            else:
+            kwargs = {
+                "IndexName": index_name,
+                "KeyConditionExpression": key_condition,
+                "ScanIndexForward": sort_order == "asc",
+                "Limit": limit,
+            }
+
+            if filter_condition is not None:
+                kwargs["FilterExpression"] = filter_condition
+
+            if after_id is not None:
                 start_key = {
                     "submission_id": after_id,
                 }
@@ -120,16 +116,17 @@ class DynamoDBMetadataService(MetadataService):
                 if sort is not None:
                     start_key[sort] = item.get(sort)
 
-            response = await table.query(
-                IndexName=index_name,
-                KeyConditionExpression=key_condition,
-                FilterExpression=filter_condition,
-                ScanIndexForward=sort_order == "asc",
-                ExclusiveStartKey=start_key,
-                Limit=limit,
-            )
+                kwargs["ExclusiveStartKey"] = start_key
+
+            response = await table.query(**kwargs)
 
             return response["Items"]
+
+    @staticmethod
+    def get_key_name(key_condition: ConditionBase):
+        expr_values = key_condition.get_expression()["values"]
+        sub_expr_values = expr_values[0].get_expression()["values"]
+        return sub_expr_values[0].name
 
 
 class StubMetadataService(MetadataService):

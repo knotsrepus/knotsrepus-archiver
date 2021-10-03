@@ -16,26 +16,44 @@ class ApiController:
         self.metadata_service = metadata_service
 
     @rest.route(path="/submission")
-    def get_submissions(self, author=None, post_type=None, sort=None, sort_order="asc", after_id=None, count=100, **kwargs):
+    def get_submissions(self, author=None, post_type=None, sort="created_utc", sort_order="asc", after_id=None, count=100, **kwargs):
         count = min(count, 100)
 
+        sort_key = Key(sort).gte(0)
         if author is None and post_type is None:
-            coroutine = self.metadata_service.list(after_id, count, sort, sort_order)
+            coroutine = self.metadata_service.query(
+                sort_key,
+                after_id=after_id,
+                limit=count,
+                sort_order=sort_order
+            )
         elif author is not None:
-            key_condition = Key("author").eq(author)
+            key_condition = Key("author").eq(author) & sort_key
             if post_type is None:
-                coroutine = self.metadata_service.query(key_condition, after_id, count, sort, sort_order)
+                coroutine = self.metadata_service.query(
+                    key_condition,
+                    after_id=after_id,
+                    limit=count,
+                    sort=sort,
+                    sort_order=sort_order
+                )
             else:
                 coroutine = self.metadata_service.query(
                     key_condition,
                     Attr("post_type").eq(post_type),
-                    after_id,
-                    count,
-                    sort,
-                    sort_order
+                    after_id=after_id,
+                    limit=count,
+                    sort=sort,
+                    sort_order=sort_order
                 )
         else:
-            coroutine = self.metadata_service.query(Key("post_type").eq(post_type), after_id, count, sort, sort_order)
+            coroutine = self.metadata_service.query(
+                Key("post_type").eq(post_type) & sort_key,
+                after_id=after_id,
+                limit=count,
+                sort=sort,
+                sort_order=sort_order
+            )
 
         data = run_synchronously(coroutine)
 
