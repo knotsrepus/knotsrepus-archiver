@@ -258,6 +258,8 @@ class KnotsrepusArchiverStack(core.Stack):
             "KnotsrepusApiGateway",
             handler=knotsrepus_api_backend_lambda,
             domain_name=apigateway.DomainName(
+                self,
+                "DomainName",
                 domain_name="api.knotsrepus.net",
                 certificate=certificatemanager.Certificate(
                     self,
