@@ -253,29 +253,31 @@ class KnotsrepusArchiverStack(core.Stack):
         archive_data_bucket.grant_read(knotsrepus_api_backend_lambda.role)
         metadata_table.grant_read_data(knotsrepus_api_backend_lambda.role)
 
+        hosted_zone = route53.PublicHostedZone.from_lookup(
+            self,
+            "HostedZone",
+            domain_name="knotsrepus.net",
+            private_zone=False
+        )
+
+        certificate = certificatemanager.Certificate(
+            self,
+            "Certificate",
+            domain_name="*.knotsrepus.net",
+            subject_alternative_names=["knotsrepus.net"],
+            validation=certificatemanager.CertificateValidation.from_dns(hosted_zone=hosted_zone)
+        )
+
+        domain_name = apigateway.DomainNameOptions(
+            domain_name="api.knotsrepus.net",
+            certificate=certificate
+        )
+
         knotsrepus_api_gateway = apigateway.LambdaRestApi(
             self,
             "KnotsrepusApiGateway",
             handler=knotsrepus_api_backend_lambda,
-            domain_name=apigateway.DomainName(
-                self,
-                "DomainName",
-                domain_name="api.knotsrepus.net",
-                certificate=certificatemanager.Certificate(
-                    self,
-                    "Certificate",
-                    domain_name="*.knotsrepus.net",
-                    subject_alternative_names=["knotsrepus.net"],
-                    validation=certificatemanager.CertificateValidation.from_dns(
-                        hosted_zone=route53.PublicHostedZone.from_lookup(
-                            self,
-                            "HostedZone",
-                            domain_name="knotsrepus.net",
-                            private_zone=False
-                        )
-                    )
-                )
-            )
+            domain_name=domain_name
         )
 
         return knotsrepus_api_backend_lambda, knotsrepus_api_gateway
