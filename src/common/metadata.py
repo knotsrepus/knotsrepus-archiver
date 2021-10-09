@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
+from typing import Union
 
 import aioboto3
-from boto3.dynamodb.conditions import ConditionBase
+from boto3.dynamodb.conditions import ConditionBase, AttributeBase
 
 from src.common import log_utils
 
@@ -123,10 +124,14 @@ class DynamoDBMetadataService(MetadataService):
             return response["Items"]
 
     @staticmethod
-    def get_key_name(key_condition: ConditionBase):
+    def get_key_name(key_condition: Union[ConditionBase, AttributeBase]):
         expr_values = key_condition.get_expression()["values"]
-        sub_expr_values = expr_values[0].get_expression()["values"]
-        return sub_expr_values[0].name
+        sub_expr = expr_values[0]
+
+        if isinstance(sub_expr, AttributeBase):
+            return sub_expr.name
+
+        return DynamoDBMetadataService.get_key_name(sub_expr)
 
 
 class StubMetadataService(MetadataService):
