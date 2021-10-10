@@ -44,10 +44,15 @@ async def main(config_source: ArchiverConfigSource, filesystem: FileSystem, meta
 
     command = await config_source.get_config("metadata_control_command")
     if command == "rebuild":
+        logger.info("Metadata store rebuild was requested.")
         last_generated_metadata = ""
         await config_source.put_config(metadata_control_command="resume")
     else:
         last_generated_metadata = await config_source.get_config("last_generated_metadata") or ""
+        if last_generated_metadata == "":
+            logger.info("Metadata generation starting from the beginning.")
+        else:
+            logger.info(f"Metadata generation resuming from after submission '{last_generated_metadata}'.")
 
     metadata_count = 0
 
