@@ -149,6 +149,9 @@ class StubMetadataService(MetadataService):
             "title": submission_id,
             "score": 1,
             "post_type": "DD",
+            "subreddit": "Superstonk",
+            "last_updated": 1630460000,
+            "dummy": "",
         }
 
     async def put(self, submission_id: str, metadata):
