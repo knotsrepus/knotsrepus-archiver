@@ -145,12 +145,12 @@ class KnotsrepusArchiverStack(core.Stack):
             sort_key=dynamodb.Attribute(name="created_utc", type=dynamodb.AttributeType.NUMBER),
             projection_type=dynamodb.ProjectionType.ALL
         )
-        # metadata_table.add_global_secondary_index(
-        #     index_name="ArchiveMetadataByDummyScore",
-        #     partition_key=dynamodb.Attribute(name="dummy", type=dynamodb.AttributeType.STRING),
-        #     sort_key=dynamodb.Attribute(name="score", type=dynamodb.AttributeType.NUMBER),
-        #     projection_type=dynamodb.ProjectionType.ALL
-        # )
+        metadata_table.add_global_secondary_index(
+            index_name="ArchiveMetadataByDummyScore",
+            partition_key=dynamodb.Attribute(name="dummy", type=dynamodb.AttributeType.STRING),
+            sort_key=dynamodb.Attribute(name="score", type=dynamodb.AttributeType.NUMBER),
+            projection_type=dynamodb.ProjectionType.ALL
+        )
         metadata_table.add_global_secondary_index(
             index_name="ArchiveMetadataByAuthorChronological",
             partition_key=dynamodb.Attribute(name="author", type=dynamodb.AttributeType.STRING),
@@ -186,16 +186,16 @@ class KnotsrepusArchiverStack(core.Stack):
             min_capacity=5,
             max_capacity=1000,
         ).scale_on_utilization(target_utilization_percent=70)
-        # metadata_table.auto_scale_global_secondary_index_read_capacity(
-        #     index_name="ArchiveMetadataByDummyScore",
-        #     min_capacity=5,
-        #     max_capacity=1000,
-        # ).scale_on_utilization(target_utilization_percent=70)
-        # metadata_table.auto_scale_global_secondary_index_write_capacity(
-        #     index_name="ArchiveMetadataByDummyScore",
-        #     min_capacity=5,
-        #     max_capacity=1000,
-        # ).scale_on_utilization(target_utilization_percent=70)
+        metadata_table.auto_scale_global_secondary_index_read_capacity(
+            index_name="ArchiveMetadataByDummyScore",
+            min_capacity=5,
+            max_capacity=1000,
+        ).scale_on_utilization(target_utilization_percent=70)
+        metadata_table.auto_scale_global_secondary_index_write_capacity(
+            index_name="ArchiveMetadataByDummyScore",
+            min_capacity=5,
+            max_capacity=1000,
+        ).scale_on_utilization(target_utilization_percent=70)
         metadata_table.auto_scale_global_secondary_index_read_capacity(
             index_name="ArchiveMetadataByAuthorChronological",
             min_capacity=5,
