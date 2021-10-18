@@ -29,10 +29,10 @@ class DynamoDBMetadataService(MetadataService):
     index_for_key_and_sort = {
         ("author", "created_utc"): "ArchiveMetadataByAuthorChronological",
         ("author", "score"): "ArchiveMetadataByAuthorScore",
-        ("created_utc", None): "ArchiveMetadataByCreatedUtc",
+        ("dummy", "created_utc"): "ArchiveMetadataByDummyChronological",
         ("post_type", "created_utc"): "ArchiveMetadataByPostTypeChronological",
         ("post_type", "score"): "ArchiveMetadataByPostTypeScore",
-        ("score", None): "ArchiveMetadataByScore",
+        ("dummy", "score"): "ArchiveMetadataByDummyScore",
     }
 
     def __init__(self, session: aioboto3.Session, table_name: str):
