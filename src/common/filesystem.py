@@ -1,4 +1,5 @@
 import json
+import os.path
 from abc import ABC, abstractmethod
 
 import aioboto3
@@ -25,6 +26,12 @@ class FileSystem(ABC):
         if False:
             yield
 
+    # noinspection PyUnreachableCode
+    @abstractmethod
+    async def list_files(self, path, **kwargs):
+        if False:
+            yield
+
     @abstractmethod
     async def read(self, path):
         pass
@@ -46,6 +53,10 @@ class StubFileSystem(FileSystem):
     async def list_dirs(self, **kwargs):
         for dir in ["testid", "testic", "testib", "testia", "testi9"]:
             yield f"{dir}/"
+
+    async def list_files(self, path, **kwargs):
+        for file in ["foo.png", "bar.png"]:
+            yield f"{path}/{file}"
 
     async def read(self, path):
         return json.dumps({
@@ -80,6 +91,17 @@ class S3FileSystem(FileSystem):
             async for result in paginator.paginate(Bucket=self.bucket_name, Delimiter="/", **kwargs):
                 for prefix in result["CommonPrefixes"]:
                     yield prefix["Prefix"]
+
+    async def list_files(self, path, **kwargs):
+        if path.endswith("/"):
+            path = path[:-1]
+
+        async with self.session.client("s3") as s3:
+            paginator = s3.get_paginator("list_objects_v2")
+            async for result in paginator.paginate(Bucket=self.bucket_name, Delimiter="/", Prefix=f"{path}/", **kwargs):
+                for contents in result["Contents"]:
+                    if contents["Key"].endswith(".json") is False:
+                        yield contents["Key"]
 
     async def read(self, path):
         async with self.session.client("s3") as s3:

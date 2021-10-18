@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+from datetime import datetime
 
 import aioboto3
 
@@ -41,7 +42,18 @@ async def main(config_source: ArchiverConfigSource, filesystem: FileSystem, meta
     logger = log_utils.get_logger("metadata-generator")
     logger.info("Building KNOTSREPUS archive metadata...")
 
-    last_generated_metadata = await config_source.get_config("last_generated_metadata") or ""
+    command = await config_source.get_config("metadata_control_command")
+    if command == "rebuild":
+        logger.info("Metadata store rebuild was requested.")
+        last_generated_metadata = ""
+        await config_source.put_config(metadata_control_command="resume")
+    else:
+        last_generated_metadata = await config_source.get_config("last_generated_metadata") or ""
+        if last_generated_metadata == "":
+            logger.info("Metadata generation starting from the beginning.")
+        else:
+            logger.info(f"Metadata generation resuming from after submission '{last_generated_metadata}'.")
+
     metadata_count = 0
 
     async for dir in filesystem.list_dirs(StartAfter=last_generated_metadata):
@@ -61,6 +73,13 @@ async def main(config_source: ArchiverConfigSource, filesystem: FileSystem, meta
             "title": data["title"],
             "score": data["score"],
             "post_type": post_type,
+            "subreddit": data["subreddit"],
+            "last_updated": int(datetime.utcnow().timestamp()),
+
+            # All metadata items need to have a column with a constant value that can be used as a partition key in a
+            # secondary index, to enable queries that order by score or creation time in reverse order without resorting
+            # to an expensive table scan.
+            "dummy": "dummy",
         }
 
         await metadata_service.put(submission_id, metadata)

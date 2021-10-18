@@ -1,16 +1,18 @@
 import os
 
 from aws_cdk import (
+    aws_apigateway as apigateway,
+    aws_certificatemanager as certificatemanager,
     aws_dynamodb as dynamodb,
     aws_ec2 as ec2,
     aws_ecs as ecs,
     aws_lambda as lambda_,
+    aws_route53 as route53,
     aws_s3 as s3,
     aws_sns as sns,
     aws_sns_subscriptions as subscriptions,
     core
 )
-
 
 class KnotsrepusArchiverStack(core.Stack):
     def __init__(self, scope: core.Construct, construct_id: str, **kwargs) -> None:
@@ -73,6 +75,11 @@ class KnotsrepusArchiverStack(core.Stack):
         archival_requested_topic.add_subscription(subscriptions.LambdaSubscription(archive_comments_lambda))
         archival_requested_topic.add_subscription(subscriptions.LambdaSubscription(archive_media_lambda))
 
+        knotsrepus_api_backend_lambda, knotsrepus_api_gateway = self.create_knotsrepus_api(
+            archive_data_bucket,
+            metadata_table
+        )
+
         cluster = self.create_cluster()
 
         submission_finder_task_definition = self.create_submission_finder_task_definition(archival_requested_topic,
@@ -133,13 +140,15 @@ class KnotsrepusArchiverStack(core.Stack):
         ).scale_on_utilization(target_utilization_percent=70)
 
         metadata_table.add_global_secondary_index(
-            index_name="ArchiveMetadataByCreatedUtc",
-            partition_key=dynamodb.Attribute(name="created_utc", type=dynamodb.AttributeType.NUMBER),
+            index_name="ArchiveMetadataByDummyChronological",
+            partition_key=dynamodb.Attribute(name="dummy", type=dynamodb.AttributeType.STRING),
+            sort_key=dynamodb.Attribute(name="created_utc", type=dynamodb.AttributeType.NUMBER),
             projection_type=dynamodb.ProjectionType.ALL
         )
         metadata_table.add_global_secondary_index(
-            index_name="ArchiveMetadataByScore",
-            partition_key=dynamodb.Attribute(name="score", type=dynamodb.AttributeType.NUMBER),
+            index_name="ArchiveMetadataByDummyScore",
+            partition_key=dynamodb.Attribute(name="dummy", type=dynamodb.AttributeType.STRING),
+            sort_key=dynamodb.Attribute(name="score", type=dynamodb.AttributeType.NUMBER),
             projection_type=dynamodb.ProjectionType.ALL
         )
         metadata_table.add_global_secondary_index(
@@ -168,22 +177,22 @@ class KnotsrepusArchiverStack(core.Stack):
         )
 
         metadata_table.auto_scale_global_secondary_index_read_capacity(
-            index_name="ArchiveMetadataByCreatedUtc",
+            index_name="ArchiveMetadataByDummyChronological",
             min_capacity=5,
             max_capacity=1000,
         ).scale_on_utilization(target_utilization_percent=70)
         metadata_table.auto_scale_global_secondary_index_write_capacity(
-            index_name="ArchiveMetadataByCreatedUtc",
+            index_name="ArchiveMetadataByDummyChronological",
             min_capacity=5,
             max_capacity=1000,
         ).scale_on_utilization(target_utilization_percent=70)
         metadata_table.auto_scale_global_secondary_index_read_capacity(
-            index_name="ArchiveMetadataByScore",
+            index_name="ArchiveMetadataByDummyScore",
             min_capacity=5,
             max_capacity=1000,
         ).scale_on_utilization(target_utilization_percent=70)
         metadata_table.auto_scale_global_secondary_index_write_capacity(
-            index_name="ArchiveMetadataByScore",
+            index_name="ArchiveMetadataByDummyScore",
             min_capacity=5,
             max_capacity=1000,
         ).scale_on_utilization(target_utilization_percent=70)
@@ -229,6 +238,51 @@ class KnotsrepusArchiverStack(core.Stack):
         ).scale_on_utilization(target_utilization_percent=70)
 
         return metadata_table
+
+    def create_knotsrepus_api(self, archive_data_bucket: s3.Bucket, metadata_table: dynamodb.Table):
+        knotsrepus_api_backend_lambda = lambda_.Function(
+            self,
+            "KnotsrepusApiBackend",
+            runtime=lambda_.Runtime.PYTHON_3_8,
+            handler="main.handler",
+            code=KnotsrepusArchiverStack.get_lambda_asset("./knotsrepus-api-lambda"),
+            environment={
+                "ARCHIVE_DATA_BUCKET": archive_data_bucket.bucket_name,
+                "METADATA_TABLE_NAME": metadata_table.table_name,
+            }
+        )
+
+        archive_data_bucket.grant_read(knotsrepus_api_backend_lambda.role)
+        metadata_table.grant_read_data(knotsrepus_api_backend_lambda.role)
+
+        hosted_zone = route53.PublicHostedZone.from_lookup(
+            self,
+            "HostedZone",
+            domain_name="knotsrepus.net",
+            private_zone=False
+        )
+
+        certificate = certificatemanager.Certificate(
+            self,
+            "Certificate",
+            domain_name="*.knotsrepus.net",
+            subject_alternative_names=["knotsrepus.net"],
+            validation=certificatemanager.CertificateValidation.from_dns(hosted_zone=hosted_zone)
+        )
+
+        domain_name = apigateway.DomainNameOptions(
+            domain_name="api.knotsrepus.net",
+            certificate=certificate
+        )
+
+        knotsrepus_api_gateway = apigateway.LambdaRestApi(
+            self,
+            "KnotsrepusApiGateway",
+            handler=knotsrepus_api_backend_lambda,
+            domain_name=domain_name
+        )
+
+        return knotsrepus_api_backend_lambda, knotsrepus_api_gateway
 
     def create_cluster(self):
         vpc = ec2.Vpc(
