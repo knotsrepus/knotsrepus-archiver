@@ -79,7 +79,7 @@ async def main(config_source: ArchiverConfigSource, filesystem: FileSystem, meta
             # All metadata items need to have a column with a constant value that can be used as a partition key in a
             # secondary index, to enable queries that order by score or creation time in reverse order without resorting
             # to an expensive table scan.
-            "dummy": "",
+            "dummy": "dummy",
         }
 
         await metadata_service.put(submission_id, metadata)
