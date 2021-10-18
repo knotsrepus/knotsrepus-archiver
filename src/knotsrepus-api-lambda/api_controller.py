@@ -22,9 +22,10 @@ class ApiController:
         sort_key = Key(sort).gte(0)
         if author is None and post_type is None:
             coroutine = self.metadata_service.query(
-                sort_key,
+                Key("dummy").eq("") & sort_key,
                 after_id=after_id,
                 limit=count,
+                sort=sort,
                 sort_order=sort_order
             )
         elif author is not None:
