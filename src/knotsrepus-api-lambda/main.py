@@ -32,7 +32,12 @@ def format_response(status_code, content_type, body):
 
     return {
         "statusCode": status_code,
-        "headers": {"Content-Type": content_type},
+        "headers": {
+            "Content-Type": content_type,
+            "Access-Control-Allow-Headers": "*",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS"
+        },
         "isBase64Encoded": is_binary,
         "body": body if is_binary else json.dumps(body)
     }
