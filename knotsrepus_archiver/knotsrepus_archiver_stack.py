@@ -279,7 +279,8 @@ class KnotsrepusArchiverStack(core.Stack):
             self,
             "KnotsrepusApiGateway",
             handler=knotsrepus_api_backend_lambda,
-            domain_name=domain_name
+            domain_name=domain_name,
+            binary_media_types=["*/*"],
         )
 
         return knotsrepus_api_backend_lambda, knotsrepus_api_gateway

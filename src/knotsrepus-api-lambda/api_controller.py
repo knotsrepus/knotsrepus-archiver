@@ -1,6 +1,7 @@
 import base64
 import json
 import mimetypes
+import os
 
 from boto3.dynamodb.conditions import Key, Attr
 
@@ -85,7 +86,7 @@ class ApiController:
     def get_media_list(self, submission_id, **kwargs):
         media = iterate_synchronously(self.filesystem.list_files(submission_id))
 
-        return "application/json", list(media)
+        return "application/json", list(os.path.basename(item) for item in media)
 
     @rest.route(path="/submission/{submission_id}/media/{filename}")
     def get_media_object(self, submission_id, filename, **kwargs):
