@@ -3,6 +3,8 @@ import os
 from aws_cdk import (
     aws_apigateway as apigateway,
     aws_certificatemanager as certificatemanager,
+    aws_cloudfront as cloudfront,
+    aws_cloudfront_origins as origins,
     aws_dynamodb as dynamodb,
     aws_ec2 as ec2,
     aws_ecs as ecs,
@@ -14,11 +16,29 @@ from aws_cdk import (
     core
 )
 
+
 class KnotsrepusArchiverStack(core.Stack):
     def __init__(self, scope: core.Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
+        us_cert, eu_cert = self.get_certificates()
+
         archive_data_bucket = s3.Bucket(self, "ArchiveData")
+
+        archive_data_dist = cloudfront.Distribution(
+            self,
+            "ArchiveDataDistribution",
+            default_behavior=cloudfront.BehaviorOptions(
+                origin=origins.S3Origin(archive_data_bucket),
+                allowed_methods=cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
+                viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+                origin_request_policy=cloudfront.OriginRequestPolicy.CORS_S3_ORIGIN,
+                compress=True
+            ),
+            domain_names=["media.knotsrepus.net"],
+            certificate=us_cert,
+            price_class=cloudfront.PriceClass.PRICE_CLASS_100
+        )
 
         config_table = self.create_config_table()
 
@@ -77,7 +97,8 @@ class KnotsrepusArchiverStack(core.Stack):
 
         knotsrepus_api_backend_lambda, knotsrepus_api_gateway = self.create_knotsrepus_api(
             archive_data_bucket,
-            metadata_table
+            metadata_table,
+            eu_cert
         )
 
         cluster = self.create_cluster()
@@ -112,6 +133,34 @@ class KnotsrepusArchiverStack(core.Stack):
             ],
             vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.ISOLATED)
         )
+
+    def get_certificates(self):
+        hosted_zone = route53.PublicHostedZone.from_lookup(
+            self,
+            "HostedZone",
+            domain_name="knotsrepus.net",
+            private_zone=False
+        )
+
+        us_cert = certificatemanager.DnsValidatedCertificate(
+            self,
+            "CertificateUsEast1",
+            region="us-east-1",
+            domain_name="*.knotsrepus.net",
+            subject_alternative_names=["knotsrepus.net"],
+            hosted_zone=hosted_zone
+        )
+
+        eu_cert = certificatemanager.DnsValidatedCertificate(
+            self,
+            "CertificateEuWest2",
+            region="eu-west-2",
+            domain_name="*.knotsrepus.net",
+            subject_alternative_names=["knotsrepus.net"],
+            hosted_zone=hosted_zone
+        )
+
+        return us_cert, eu_cert
 
     def create_config_table(self):
         config_table = dynamodb.Table(
@@ -239,14 +288,12 @@ class KnotsrepusArchiverStack(core.Stack):
 
         return metadata_table
 
-    def create_knotsrepus_api(self, archive_data_bucket: s3.Bucket, metadata_table: dynamodb.Table):
+    def create_knotsrepus_api(self, archive_data_bucket: s3.Bucket, metadata_table: dynamodb.Table, certificate: certificatemanager.Certificate):
         knotsrepus_api_backend_lambda = lambda_.Function(
             self,
             "KnotsrepusApiBackend",
             runtime=lambda_.Runtime.PYTHON_3_8,
             handler="main.handler",
-            timeout=core.Duration.minutes(1),
-            memory_size=1024,
             code=KnotsrepusArchiverStack.get_lambda_asset("./knotsrepus-api-lambda"),
             environment={
                 "ARCHIVE_DATA_BUCKET": archive_data_bucket.bucket_name,
@@ -256,21 +303,6 @@ class KnotsrepusArchiverStack(core.Stack):
 
         archive_data_bucket.grant_read(knotsrepus_api_backend_lambda.role)
         metadata_table.grant_read_data(knotsrepus_api_backend_lambda.role)
-
-        hosted_zone = route53.PublicHostedZone.from_lookup(
-            self,
-            "HostedZone",
-            domain_name="knotsrepus.net",
-            private_zone=False
-        )
-
-        certificate = certificatemanager.Certificate(
-            self,
-            "Certificate",
-            domain_name="*.knotsrepus.net",
-            subject_alternative_names=["knotsrepus.net"],
-            validation=certificatemanager.CertificateValidation.from_dns(hosted_zone=hosted_zone)
-        )
 
         domain_name = apigateway.DomainNameOptions(
             domain_name="api.knotsrepus.net",
