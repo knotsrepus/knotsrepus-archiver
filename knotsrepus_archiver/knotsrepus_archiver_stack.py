@@ -245,6 +245,8 @@ class KnotsrepusArchiverStack(core.Stack):
             "KnotsrepusApiBackend",
             runtime=lambda_.Runtime.PYTHON_3_8,
             handler="main.handler",
+            timeout=core.Duration.minutes(1),
+            memory_size=1024,
             code=KnotsrepusArchiverStack.get_lambda_asset("./knotsrepus-api-lambda"),
             environment={
                 "ARCHIVE_DATA_BUCKET": archive_data_bucket.bucket_name,
