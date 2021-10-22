@@ -60,40 +60,34 @@ class ApiController:
         data = run_synchronously(coroutine)
 
         if data is not None:
-            return "application/json", data
+            return rest.ok(data)
 
-        return None
+        return rest.not_found()
 
     @rest.route(path="/submission/{submission_id}")
     def get_submission(self, submission_id, **kwargs):
         data = run_synchronously(self.filesystem.read(f"{submission_id}/post.json"))
 
         if data is not None:
-            return "application/json", json.loads(data)
+            return rest.ok(json.loads(data))
 
-        return None
+        return rest.not_found()
 
     @rest.route(path="/submission/{submission_id}/comments")
     def get_comments(self, submission_id, **kwargs):
         data = run_synchronously(self.filesystem.read(f"{submission_id}/comments.json"))
 
         if data is not None:
-            return "application/json", json.loads(data)
+            return rest.ok(json.loads(data))
 
-        return None
+        return rest.not_found()
 
     @rest.route(path="/submission/{submission_id}/media")
     def get_media_list(self, submission_id, **kwargs):
         media = iterate_synchronously(self.filesystem.list_files(submission_id))
 
-        return "application/json", list(os.path.basename(item) for item in media)
+        return rest.ok(list(os.path.basename(item) for item in media))
 
     @rest.route(path="/submission/{submission_id}/media/{filename}")
     def get_media_object(self, submission_id, filename, **kwargs):
-        data = run_synchronously(self.filesystem.read(f"{submission_id}/{filename}"))
-
-        if data is not None:
-            content_type, _ = mimetypes.guess_type(filename)
-            return content_type, base64.b64encode(data).decode("utf-8")
-
-        return None
+        return rest.redirect(f"https://media.knotsrepus.net/{submission_id}/{filename}")

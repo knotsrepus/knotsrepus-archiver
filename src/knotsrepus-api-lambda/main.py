@@ -27,7 +27,7 @@ def get_api_controller(context):
     return api_controller.ApiController(filesystem, metadata_service)
 
 
-def format_response(status_code, content_type, body):
+def format_response(status_code, headers, content_type, body):
     is_binary = any(prefix in content_type for prefix in ["image", "video", "audio"])
 
     return {
@@ -36,7 +36,8 @@ def format_response(status_code, content_type, body):
             "Content-Type": content_type,
             "Access-Control-Allow-Headers": "*",
             "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS"
+            "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+            **headers
         },
         "isBase64Encoded": is_binary,
         "body": body if is_binary else json.dumps(body)
@@ -57,9 +58,9 @@ def dispatch_event_to_api_controller(event, context):
     api = get_api_controller(context)
     query_params = event.get("queryStringParameters") or dict()
 
-    (content_type, body) = rest.dispatch(path, api, **query_params)
+    (status, headers, content_type, body) = rest.dispatch(path, api, **query_params)
 
-    return format_response(200, content_type, body)
+    return format_response(status, headers, content_type, body)
 
 
 def handler(event, context):

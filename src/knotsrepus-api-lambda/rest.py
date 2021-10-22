@@ -1,3 +1,4 @@
+import json
 import re
 
 __ROUTES = dict()
@@ -67,3 +68,17 @@ def match_route(path):
         return value, match.groupdict()
 
     return None, None
+
+
+def ok(body, content_type="application/json", headers=None):
+    if headers is None:
+        headers = {}
+    return 200, headers, content_type, body
+
+
+def redirect(location):
+    return 301, {"Location": location}, "application/json", None
+
+
+def not_found():
+    return 404, {}, "application/json", json.dumps({"error": "Not Found"})
